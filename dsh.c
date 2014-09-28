@@ -3,8 +3,10 @@
 void seize_tty(pid_t callingprocess_pgid); /* Grab control of the terminal for the calling process pgid.  */
 void continue_job(job_t *j); /* resume a stopped job */
 void spawn_job(job_t *j, bool fg); /* spawn a new job */
+
 job_t* jobsList;
 job_t* lastJob;
+int jobsSize;
 
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
@@ -103,12 +105,12 @@ void continue_job(job_t *j)
  */
 bool builtin_cmd(job_t *last_job, int argc, char **argv)
 {
-    
     /* check whether the cmd is a built in command
      */
     
     if (!strcmp(argv[0], "quit")) {
         /* Your code here */
+        
         exit(EXIT_SUCCESS);
         last_job->first_process->completed = true;   //complete all processes after exiting
         last_job->first_process->status = 0;
@@ -116,16 +118,32 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
     }
     else if (!strcmp("jobs", argv[0])) {
         /* Your code here */
+        // This is why we have to keep a list of all jobs
+        
+        //check if jobs in list
+        // loop through all jobs and check status
+        //update size
+        
+        last_job->first_process->completed = true;
+        last_job->first_process->status = 0;
         return true;
     }
     else if (!strcmp("cd", argv[0])) {
         /* Your code here */
+        //check path of child directory and exit the parent
+        return true;
     }
     else if (!strcmp("bg", argv[0])) {
         /* Your code here */
+        last_job->first_process->completed = true;   //same as quiting from the current process
+        last_job->first_process->status = 0;
+        return true;
     }
     else if (!strcmp("fg", argv[0])) {
         /* Your code here */
+        last_job->first_process->completed = true;   //same as quiting from the current process
+        last_job->first_process->status = 0;
+        return true;
     }
     return false;       /* not a builtin command */
 }
@@ -159,7 +177,7 @@ int main()
         /* Only for debugging purposes to show parser output; turn off in the
          * final code */
         if(PRINT_INFO) print_job(j);
-        
+    
         /* Your code goes here */
         // We also need to figure out a way to give the new jobs ids
         //help
@@ -167,22 +185,31 @@ int main()
         job_t *x;
         x = j;
         process_t *p;
-        
-        while (x->next != NULL) {
+        while(x->next != NULL){
             p = x->first_process;
-            while (p->next != NULL) {
+            while(p->next !=NULL){
                 p->pid = getpid();
                 p = p->next;
             }
-            if (p->next == NULL) {
+            if(p->next == NULL){
                 p->pid = getpid();
             }
             x->pgid = getpid();
-            x =x->next;
+            x = x->next;
         }
-        if (x->next==NULL) {
+        if (x->next == NULL){
             p = x->first_process;
+            while(p->next != NULL){
+                p->pid = getpid();
+                p = p->next;
+            }
+            if(p->next ==NULL){
+                p->pid = getpid();
+            }
+            x->pgid = getpid();
         }
+        
+        
         
         
         process_t* checkProcess; //keep track of the processes
@@ -193,13 +220,13 @@ int main()
             while (checkProcess->next !=NULL) {  //loop through all processes
                 /* If not built-in */
                 if (!(builtin_cmd(j, checkProcess->argc, checkProcess->argv))) {
-                    spawn_job(j, true);                }
+                    spawn_job(j, !(j->bg));                }
                 checkProcess = checkProcess->next;
             }
             /* What about the end of the processes? checkProcess->next == NULL*/
             if (checkProcess->next == NULL) {
                 if (!(builtin_cmd(j, checkProcess->argc, checkProcess->argv))) {
-                    spawn_job(j, true);                }
+                    spawn_job(j, !(j->bg));                }
                 if(jobsList ==NULL){  //if there are no current jobs
                     jobsList = j;
                     lastJob = jobsList;
@@ -207,8 +234,7 @@ int main()
                     lastJob->next = j;
                     lastJob = lastJob->next;
                 }
-                //update size of the jobs?
-                //Help here?????
+                jobsSize++;
             }
             j=j->next;
         }
@@ -217,6 +243,7 @@ int main()
             // still loop through the list of processes and spawn jobs
             //update jobs list
             //last job
+            checkProcess = j->first_process;
             while (checkProcess->next !=NULL) {  //loop through all processes
                 /* If not built-in */
                 if (!(builtin_cmd(j, checkProcess->argc, checkProcess->argv))) {
@@ -230,10 +257,7 @@ int main()
                 lastJob->next = j;
                 lastJob = lastJob->next;
             }
-            //update size of the jobs?
-            //Help here?????
-            //
-        }
+            jobsSize++;        }
         
         
         
