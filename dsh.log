@@ -1,2 +1,2 @@
-8803(Launched): echo < test.txt
-8804(Launched): wc < test.txt
+9100(Launched): ls
+9100(Completed): ls

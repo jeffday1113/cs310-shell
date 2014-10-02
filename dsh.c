@@ -73,8 +73,13 @@ void new_child(job_t *j, process_t *p, bool fg)
                 if (p->ifile!=NULL){
                     int in;
                     in = open(p->ifile, O_RDONLY);
-                    dup2(in,STDIN_FILENO);
-                    close(in);
+                    if (in>0){
+                        dup2(in,STDIN_FILENO);
+                        close(in);
+                    }
+                    else{
+                        perror("Input file does not exist");
+                    }
                 }
 
                 if (p->ofile!=NULL){
