@@ -56,21 +56,20 @@ void spawn_job(job_t *j, bool fg)
     pid_t pid;
     process_t *p;
 	process_t* last_process;
-	int first_time = 0;
+	int pfd[2];
     for(p = j->first_process; p; p = p->next) {
         /* YOUR CODE HERE? */
         /* Builtin commands are already taken care earlier */
         
 		//define file descrtriptors for pipe
 		
-        int pfd[2];
-		int pipe_boolean = 0;
+        
         //int fpfd;
         //int ppfd;
-        if(p->next !=NULL && first_time == 0){
+        if(p->next !=NULL){
 			printf("running pipe\n");
-            pipe(pfd);
-			pipe_boolean = 1;
+            int a = pipe(pfd);
+			printf("piping ran? : %d", a);
 		}
 		
         switch (pid = fork()) {
@@ -101,15 +100,19 @@ void spawn_job(job_t *j, bool fg)
                     dup2(o, STDOUT_FILENO);
                     close(o);
                 }
+				
+				
 				//pipe
 				
-				if (pipe_boolean == 1 && first_time == 0) {
-                    close(pfd[0]);
+				if (p == j->first_process) {
+					perror("loop 1");
+					close(pfd[0]);
 					close(1);
                     dup2(pfd[1],1); //write
                 }
 				
-				if (pipe_boolean == 1 && first_time == 1) {
+				else{
+					perror("loop 2");
 					close(pfd[1]);
 					close(0);
                     dup2(pfd[0],0); //read
@@ -127,16 +130,16 @@ void spawn_job(job_t *j, bool fg)
                 /* establish child process group */
                 p->pid = pid;
                 set_child_pgid(j, p);
-                close(pfd[0]);
-				close(pfd[1]);
                 /* YOUR CODE HERE?  Parent-side code for new process.  */
 				
         }
-		first_time = 1;
+		
         printf("pid of new child: %d\n", pid);
         /* YOUR CODE HERE?  Parent-side code for new job.*/
         
     }
+	close(pfd[0]);
+	close(pfd[1]);
     if(fg){
         //seize_tty(getpid()); // assign the terminal back to dsh
 		//would never have been assigned
@@ -147,9 +150,10 @@ void spawn_job(job_t *j, bool fg)
         int status = 0;
 		process_t* tempt = j->first_process;
 		while(tempt != NULL){
-			printf("waiting\n");
+			printf("waiting for: %d\n", tempt->pid);
 			waitpid(tempt->pid, &status, WUNTRACED);
 			tempt = tempt->next;
+			printf("done waiting\n");
 		}
         //printf("pid %d complete\n", p->pid);
 		if(!WIFSTOPPED(status)){
