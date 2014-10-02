@@ -58,6 +58,12 @@ void spawn_job(job_t *j, bool fg)
     for(p = j->first_process; p; p = p->next) {
         /* YOUR CODE HERE? */
         /* Builtin commands are already taken care earlier */
+        //define file descrtriptors for pipe
+        int pfd[2];
+        int fpfd;
+        int ppfd;
+        if(p->next !=NULL)
+            pipe(pfd);
         
         switch (pid = fork()) {
                 
@@ -66,10 +72,38 @@ void spawn_job(job_t *j, bool fg)
                 exit(EXIT_FAILURE);
                 
             case 0: /* child process  */
-                printf("line 68");
+                printf("line 68 the command and child process");
                 p->pid = getpid();
                 new_child(j, p, fg);
                 //execute desired code
+                
+                //INUT REDIRECTION
+                if (p->ifile!=NULL){
+                    int in;
+                    in = open(p->ifile, O_RDONLY);
+                    if (in>0){
+                        dup2(in,STDIN_FILENO);
+                        close(in);
+                    }
+                    else{
+                        perror("Input file does not exist");
+                    }
+                }
+                
+                if (p->ofile!=NULL){
+                    int o;
+                    o=creat(p->ofile, 0644);
+                    dup2(o, STDOUT_FILENO);
+                    close(o);
+                }
+                //pipe
+                if (j->first_process == p) {
+                    close(0);
+                    close(pfd[1]);
+                    dup2(pfd[0], 0); //read
+                    close(pfd[0]);
+                }
+                
                 execvp(p->argv[0], p->argv);
                 
                 /* YOUR CODE HERE?  Child-side code for new process. */
@@ -79,29 +113,35 @@ void spawn_job(job_t *j, bool fg)
                 
             default: /* parent */
                 /* establish child process group */
+                
                 p->pid = pid;
                 set_child_pgid(j, p);
+                printf("fg on, taking up terminal until done\n");
+                close(pfd[0]);
+                close(pfd[1]);
+                
+                int status = 0;
+                waitpid(j->first_process->pid, &status, 0);
+                
                 
                 /* YOUR CODE HERE?  Parent-side code for new process.  */
         }
         printf("pid of new child: %d\n", pid);
         /* YOUR CODE HERE?  Parent-side code for new job.*/
         
-    }
-    if(fg){
-        seize_tty(getpid()); // assign the terminal back to dsh
-        printf("fg off, running in background\n");
-    }
-    else{
-        printf("fg on, taking up terminal until done\n");
-        int status = 0;
-        waitpid(j->first_process->pid, &status, 0);
-        //printf("pid %d complete\n", p->pid);
-        if(jobsList == j){
-            jobsList = j->next;
+        //redirection back to tty
+        if(fg){
+            // seize_tty(getpid()); // assign the terminal back to dsh
+            printf("fg off, running in background\n");
         }
-        free_job(j);
-        seize_tty(getpid());
+        else{
+            if(jobsList == j){
+                jobsList = j->next;
+            }
+            //  free_job(j);
+            seize_tty(getpid());
+        }
+        // seize_tty(getpid()); // assign the terminal back to dsh
     }
 }
 
@@ -142,7 +182,7 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
             //nothing
             printf("no jobs");
         }else{
-            print_job(jobsList);
+            print_job(last_job);
             
         }
         
@@ -168,6 +208,8 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
     }
     else if (!strcmp("fg", argv[0])) {
         /* Your code here */
+        
+        //continue_job(last_job);
         
         last_job->first_process->completed = true;   //same as quiting from the current process
         last_job->first_process->status = 0;
@@ -204,7 +246,7 @@ int main()
         
         /* Only for debugging purposes to show parser output; turn off in the
          * final code */
-      //  if(PRINT_INFO) print_job(j);
+        //  if(PRINT_INFO) print_job(j);
         
         /* Your code goes here */
         // We also need to figure out a way to give the new jobs ids
@@ -224,6 +266,6 @@ int main()
             
             j = j->next;
         }
-
+        
     }
 }
