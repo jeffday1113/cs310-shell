@@ -66,9 +66,28 @@ void spawn_job(job_t *j, bool fg)
                 exit(EXIT_FAILURE);
                 
             case 0: /* child process  */
-                printf("line 68");
                 p->pid = getpid();
                 new_child(j, p, fg);
+				
+				 if (p->ifile!=NULL){
+                    int in;
+                    in = open(p->ifile, O_RDONLY);
+                    if (in>0){
+                        dup2(in,STDIN_FILENO);
+                        close(in);
+                    }
+                    else{
+                        perror("Input file does not exist");
+                    }
+                }
+
+                if (p->ofile!=NULL){
+                    int o;
+                    o=creat(p->ofile, 0644);
+                    dup2(o, STDOUT_FILENO);
+                    close(o);
+                }
+				
                 //execute desired code
                 execvp(p->argv[0], p->argv);
                 
@@ -180,9 +199,14 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 char* promptmsg()
 {
     /* Modify this to include pid */
-    char* message[16];
-    sprintf(message, "dsh-%d$ ",(int) getpid());
-    return message;
+    //char* message[16];
+   // sprintf(message, "dsh-%d$ ",(int) getpid());
+	char string[]="dsh ";
+	int number=getpid();
+	char end[] = "$";
+	char cated_string[sizeof(string) + sizeof(number) + sizeof(end)];
+	sprintf(cated_string,"%s%d%s",string,number,end);
+    return cated_string;
 }
 
 int main()
