@@ -3,12 +3,15 @@
 void seize_tty(pid_t callingprocess_pgid); /* Grab control of the terminal for the calling process pgid.  */
 void continue_job(job_t *j); /* resume a stopped job */
 void spawn_job(job_t *j, bool fg); /* spawn a new job */
-job_t *head_of_jobs = NULL; //keeps track of jobs
+
+job_t* jobsList;
+job_t* lastJob;
+int jobsSize;
 
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
 {
-    if (j->pgid < 0) /* first child: use its pid for job pgidd */
+    if (j->pgid < 0) /* first child: use its pid for job pgid */
         j->pgid = p->pid;
     return(setpgid(p->pid,j->pgid));
 }
@@ -94,8 +97,8 @@ void spawn_job(job_t *j, bool fg)
         int status = 0;
         waitpid(j->first_process->pid, &status, 0);
         //printf("pid %d complete\n", p->pid);
-        if(head_of_jobs == j){
-            head_of_jobs = j->next;
+        if(jobsList == j){
+            jobsList = j->next;
         }
         free_job(j);
         seize_tty(getpid());
@@ -135,14 +138,13 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
         //check if jobs in list
         //update size
         
-        if (head_of_jobs ==NULL) {
+        if (jobsList ==NULL) {
             //nothing
-            printf(" no jobs");
+            printf("no jobs");
         }else{
-            print_job(head_of_jobs);
+            print_job(jobsList);
+            
         }
-        
-        
         
         last_job->first_process->completed = true;
         last_job->first_process->status = 0;
@@ -177,15 +179,11 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 /* Build prompt messaage */
 char* promptmsg()
 {
-    int this_id = getpid();
     /* Modify this to include pid */
-    /*code from stackoverflow http://stackoverflow.com/questions/19265370/concatenate-string-and-int-type-variable-in-c?rq=1*/
-    char string[]="dsh -";
-    char cated_string[sizeof(string) + sizeof(this_id)];
-    sprintf(cated_string,"%s%d$ ",string,this_id);
-    return cated_string;
+    char* message[16];
+    sprintf(message, "dsh-%d$ ",(int) getpid());
+    return message;
 }
-
 
 int main()
 {
@@ -206,32 +204,26 @@ int main()
         
         /* Only for debugging purposes to show parser output; turn off in the
          * final code */
-        //if(PRINT_INFO) print_job(head_of_jobs);
+      //  if(PRINT_INFO) print_job(j);
+        
+        /* Your code goes here */
+        // We also need to figure out a way to give the new jobs ids
+        //help
+        //loop through the jobs? Most definitely
         
         while(j!=NULL){
             if(!builtin_cmd(j, j->first_process->argc, j->first_process->argv)){
-                if(head_of_jobs == NULL){
-                    head_of_jobs = j;
+                if(jobsList == NULL){
+                    jobsList = j;
                 }
                 else{
-                    find_last_job(head_of_jobs)->next = j;
+                    find_last_job(jobsList)->next = j;
                 }
                 spawn_job(j, j->bg);
             }
             
             j = j->next;
         }
-        
-        
-        
-        /* Your code goes here */
-        /* You need to loop through jobs list since a command line can contain ;*/
-        /* Check for built-in commands */
-        /* If not built-in */
-        /* If job j runs in foreground */
-        /* spawn_job(j,true) */
-        /* else */
-        /* spawn_job(j,false) */
+
     }
 }
-
