@@ -8,7 +8,7 @@ job_t *head_of_jobs = NULL; //keeps track of jobs
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
 {
-    if (j->pgid < 0) /* first child: use its pid for job pgid */
+    if (j->pgid < 0) /* first child: use its pid for job pgidd */
         j->pgid = p->pid;
     return(setpgid(p->pid,j->pgid));
 }
@@ -32,7 +32,7 @@ void new_child(job_t *j, process_t *p, bool fg)
          set_child_pgid(j, p);
 
          if(fg) // if fg is set
-		seize_tty(j->pgid); // assign the terminal
+        seize_tty(j->pgid); // assign the terminal
 
          /* Set the handling for job control signals back to the default. */
          signal(SIGTTOU, SIG_DFL);
@@ -50,26 +50,26 @@ void new_child(job_t *j, process_t *p, bool fg)
 
 void spawn_job(job_t *j, bool fg) 
 {
-	pid_t pid;
-	process_t *p;
-	for(p = j->first_process; p; p = p->next) {
-	  /* YOUR CODE HERE? */
-	  /* Builtin commands are already taken care earlier */
-	  
-	  switch (pid = fork()) {
-		
+    pid_t pid;
+    process_t *p;
+    for(p = j->first_process; p; p = p->next) {
+      /* YOUR CODE HERE? */
+      /* Builtin commands are already taken care earlier */
+      
+      switch (pid = fork()) {
+        
           case -1: /* fork failure */
             perror("fork");
             exit(EXIT_FAILURE);
 
           case 0: /* child process  */
-			printf("line 68");
-            p->pid = getpid();	    
+            printf("line 68");
+            p->pid = getpid();      
             new_child(j, p, fg);
-			//execute desired code
+            //execute desired code
             execvp(p->argv[0], p->argv);
-			
-			/* YOUR CODE HERE?  Child-side code for new process. */
+            
+            /* YOUR CODE HERE?  Child-side code for new process. */
             perror("New child should have done an exec");
             exit(EXIT_FAILURE);  /* NOT REACHED */
             break;    /* NOT REACHED */
@@ -81,25 +81,25 @@ void spawn_job(job_t *j, bool fg)
 
             /* YOUR CODE HERE?  Parent-side code for new process.  */
           }
-		printf("pid of new child: %d\n", pid);
+        printf("pid of new child: %d\n", pid);
             /* YOUR CODE HERE?  Parent-side code for new job.*/
 
-	}
-	if(fg){
-			seize_tty(getpid()); // assign the terminal back to dsh
-			printf("fg off, running in background\n");
-		}
-	else{
-		printf("fg on, taking up terminal until done\n");
-		int status = 0;
-		waitpid(j->first_process->pid, &status, 0);
-		//printf("pid %d complete\n", p->pid);
-		if(head_of_jobs == j){
-			head_of_jobs = j->next;
-		}
-		free_job(j);
-		seize_tty(getpid());
-	}
+    }
+    if(fg){
+            seize_tty(getpid()); // assign the terminal back to dsh
+            printf("fg off, running in background\n");
+        }
+    else{
+        printf("fg on, taking up terminal until done\n");
+        int status = 0;
+        waitpid(j->first_process->pid, &status, 0);
+        //printf("pid %d complete\n", p->pid);
+        if(head_of_jobs == j){
+            head_of_jobs = j->next;
+        }
+        free_job(j);
+        seize_tty(getpid());
+    }
 }
 
 /* Sends SIGCONT signal to wake up the blocked job */
@@ -114,81 +114,116 @@ void continue_job(job_t *j)
  * builtin_cmd - If the user has typed a built-in command then execute
  * it immediately.  
  */
-bool builtin_cmd(job_t *last_job, int argc, char **argv) 
+bool builtin_cmd(job_t *last_job, int argc, char **argv)
 {
-	    /* check whether the cmd is a built in command
-        */
-        if (!strcmp(argv[0], "quit")) {
-            /* Your code here */
-            exit(EXIT_SUCCESS);
-	}
-        else if (!strcmp("jobs", argv[0])) {
-			print_job(head_of_jobs);
-            /* Your code here */
-            return true;
+    
+    /* check whether the cmd is a built in command
+     */
+    
+    if (!strcmp(argv[0], "quit")) {
+       
+        /* Your code here */
+        exit(EXIT_SUCCESS);
+        last_job->first_process->completed = true;   //complete all processes after exiting
+        last_job->first_process->status = 0;
+        return true;
+    }
+    else if (!strcmp("jobs", argv[0])) {
+        /* Your code here */
+        // This is why we have to keep a list of all jobs
+        
+        //check if jobs in list
+        //update size
+        
+        if (head_of_jobs ==NULL) {
+            //nothing
+            printf(" no jobs");
+        }else{
+            print_job(head_of_jobs);
         }
-	else if (!strcmp("cd", argv[0])) {
-            /* Your code here */
-        }
-        else if (!strcmp("bg", argv[0])) {
-            /* Your code here */
-        }
-        else if (!strcmp("fg", argv[0])) {
-            /* Your code here */
-        }
-        return false;       /* not a builtin command */
+            
+    
+        
+    last_job->first_process->completed = true;
+    last_job->first_process->status = 0;
+    return true;
+    }
+    else if (!strcmp("cd", argv[0])) {
+        /* Your code here */
+        //check path of child directory and exit the parent
+        chdir(argv[1]);   //new directory
+        // how to assign it back to shell
+        
+        last_job->first_process->completed = true;
+        last_job->first_process->status = 0;
+        return true;
+    }
+    else if (!strcmp("bg", argv[0])) {
+        /* Your code here */
+        last_job->first_process->completed = true;   //Not required
+        last_job->first_process->status = 0;
+        return true;
+    }
+    else if (!strcmp("fg", argv[0])) {
+        /* Your code here */
+        
+        last_job->first_process->completed = true;   //same as quiting from the current process
+        last_job->first_process->status = 0;
+        return true;
+    }
+    return false;       /* not a builtin command */
 }
 
 /* Build prompt messaage */
 char* promptmsg() 
 {
-	int this_id = getpid();
+    int this_id = getpid();
     /* Modify this to include pid */
-	/*code from stackoverflow http://stackoverflow.com/questions/19265370/concatenate-string-and-int-type-variable-in-c?rq=1*/
-	char string[]="dsh -";
-	char cated_string[sizeof(string) + sizeof(this_id)];
-	sprintf(cated_string,"%s%d$ ",string,this_id);
-	return cated_string;
+    /*code from stackoverflow http://stackoverflow.com/questions/19265370/concatenate-string-and-int-type-variable-in-c?rq=1*/
+    char string[]="dsh -";
+    char cated_string[sizeof(string) + sizeof(this_id)];
+    sprintf(cated_string,"%s%d$ ",string,this_id);
+    return cated_string;
 }
 
 
 int main() 
 {
 
-	init_dsh();
-	DEBUG("Successfully initialized\n");
+    init_dsh();
+    DEBUG("Successfully initialized\n");
 
-	while(1) {
+    while(1) {
         job_t *j = NULL;
-		if(!(j = readcmdline(promptmsg()))) {
-			if (feof(stdin)) { /* End of file (ctrl-d) */
-				fflush(stdout);
-				printf("\n");
-				exit(EXIT_SUCCESS);
-           		}
-			continue; /* NOOP; user entered return or spaces with return */
-		}
+        if(!(j = readcmdline(promptmsg()))) {
+            if (feof(stdin)) { /* End of file (ctrl-d) */
+                fflush(stdout);
+                printf("\n");
+                exit(EXIT_SUCCESS);
+                }
+            continue; /* NOOP; user entered return or spaces with return */
+        }
 
         /* Only for debugging purposes to show parser output; turn off in the
          * final code */
         //if(PRINT_INFO) print_job(head_of_jobs);
-		
-		while(j!=NULL){
-			if(!builtin_cmd(j, j->first_process->argc, j->first_process->argv)){
-				if(head_of_jobs == NULL){
-					head_of_jobs = j;	
-				}
-				else{
-					find_last_job(head_of_jobs)->next = j;
-				}
-				spawn_job(j, j->bg);
-			}
-			
-			j = j->next;
-		}
-		
-		
-		
+        
+        while(j!=NULL){
+            if(!builtin_cmd(j, j->first_process->argc, j->first_process->argv)){
+                if(head_of_jobs == NULL){
+                    head_of_jobs = j;   
+                }
+                else{
+                    find_last_job(head_of_jobs)->next = j;
+                }
+                spawn_job(j, j->bg);
+            }
+            
+            j = j->next;
+        }
+        
+        
+        
         /* Your code goes here */
         /* You need to loop through jobs list since a command line can contain ;*/
         /* Check for built-in commands */
