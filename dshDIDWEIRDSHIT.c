@@ -7,12 +7,15 @@ void spawn_job(job_t *j, bool fg); /* spawn a new job */
 job_t* jobsList;
 job_t* lastJob;
 int jobsSize;
+int terminal_pid;
 
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
 {
-    if (j->pgid < 0) /* first child: use its pid for job pgid */
+    if (j->pgid < 0){ /* first child: use its pid for job pgid */
+		printf("\n id for group set %d\n", p->pid);
         j->pgid = p->pid;
+	}
     return(setpgid(p->pid,j->pgid));
 }
 
@@ -33,8 +36,7 @@ void new_child(job_t *j, process_t *p, bool fg)
     
     /* also establish child process group in child to avoid race (if parent has not done it yet). */
     set_child_pgid(j, p);
-    
-    if(!fg) // if fg is set NOTE CHANGED TO NOT HERE DUE TO ORIGINAL CALL
+    if(!fg) // if fg is set
         seize_tty(j->pgid); // assign the terminal
     
     /* Set the handling for job control signals back to the default. */
@@ -50,29 +52,20 @@ void new_child(job_t *j, process_t *p, bool fg)
  * pgid: this feature is used to start the second or
  * subsequent processes in a pipeline.
  * */
+ 
+ void test(int signum){
+	printf("reached");
+	seize_tty(terminal_pid);
+}
 
 void spawn_job(job_t *j, bool fg)
 {
     pid_t pid;
     process_t *p;
-	process_t* last_process;
-	int first_time = 0;
     for(p = j->first_process; p; p = p->next) {
         /* YOUR CODE HERE? */
-        /* Builtin commands are already taken care earlier */
+        /* Builtin commands are alrready taken care earlier */
         
-		//define file descrtriptors for pipe
-		
-        int pfd[2];
-		int pipe_boolean = 0;
-        //int fpfd;
-        //int ppfd;
-        if(p->next !=NULL && first_time == 0){
-			printf("running pipe\n");
-            pipe(pfd);
-			pipe_boolean = 1;
-		}
-		
         switch (pid = fork()) {
                 
             case -1: /* fork failure */
@@ -82,6 +75,13 @@ void spawn_job(job_t *j, bool fg)
             case 0: /* child process  */
                 p->pid = getpid();
                 new_child(j, p, fg);
+				
+				int (*functionPtr) (int);
+				functionPtr = test;
+	
+				//signal(SIGTSTP, functionPtr);
+				
+				//signal(SIGTSTP, SIG_DFL);
 				
 				 if (p->ifile!=NULL){
                     int in;
@@ -101,19 +101,6 @@ void spawn_job(job_t *j, bool fg)
                     dup2(o, STDOUT_FILENO);
                     close(o);
                 }
-				//pipe
-				
-				if (pipe_boolean == 1 && first_time == 0) {
-                    close(pfd[0]);
-					close(1);
-                    dup2(pfd[1],1); //write
-                }
-				
-				if (pipe_boolean == 1 && first_time == 1) {
-					close(pfd[1]);
-					close(0);
-                    dup2(pfd[0],0); //read
-                }
 				
                 //execute desired code
                 execvp(p->argv[0], p->argv);
@@ -127,44 +114,27 @@ void spawn_job(job_t *j, bool fg)
                 /* establish child process group */
                 p->pid = pid;
                 set_child_pgid(j, p);
-                close(pfd[0]);
-				close(pfd[1]);
+                
                 /* YOUR CODE HERE?  Parent-side code for new process.  */
-				
         }
-		first_time = 1;
         printf("pid of new child: %d\n", pid);
         /* YOUR CODE HERE?  Parent-side code for new job.*/
         
     }
     if(fg){
-        //seize_tty(getpid()); // assign the terminal back to dsh
-		//would never have been assigned
+        seize_tty(getpid()); // assign the terminal back to dsh
         printf("fg off, running in background\n");
     }
     else{
         printf("fg on, taking up terminal until done\n");
         int status = 0;
-		process_t* tempt = j->first_process;
-		while(tempt != NULL){
-			printf("waiting\n");
-			waitpid(tempt->pid, &status, WUNTRACED);
-			tempt = tempt->next;
-		}
+        waitpid(j->first_process->pid, &status, 0);
         //printf("pid %d complete\n", p->pid);
-		if(!WIFSTOPPED(status)){
-			if(jobsList == j){
-				jobsList = j->next;
-			}
-			j->first_process->completed = true; //process is completed
-			free_job(j);
-		}
-		else{
-			j->first_process->stopped = true; //process is stopped
-			printf("job with pgid %d is stopped\n", j->pgid);
-			j->notified = true;
-		}
-		seize_tty(getpid());
+        if(jobsList == j){
+            jobsList = j->next;
+        }
+        free_job(j);
+        seize_tty(getpid());
     }
 }
 
@@ -203,12 +173,14 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
         
         if (jobsList ==NULL) {
             //nothing
-            printf("no jobs\n");
+            printf("no jobs");
         }else{
             print_job(jobsList);
             
         }
-		
+        
+        last_job->first_process->completed = true;
+        last_job->first_process->status = 0;
         return true;
     }
     else if (!strcmp("cd", argv[0])) {
@@ -217,6 +189,8 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
         chdir(argv[1]);   //new directory
         // how to assign it back to shell
         
+        last_job->first_process->completed = true;
+        last_job->first_process->status = 0;
         return true;
     }
     else if (!strcmp("bg", argv[0])) {
@@ -227,38 +201,15 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
     }
     else if (!strcmp("fg", argv[0])) {
         /* Your code here */
-		//NEED TO ADJUST TO CHECK FOR ARGV0 TOO
-		job_t* temp = jobsList;
-		while(temp != NULL){
-			if(temp->first_process->stopped = true){
-				continue_job(temp); //resumes job
-				seize_tty(temp->pgid); //gives it the terminal
-				int status = 0;
-				//don't need to check for bg because in fg function
-				waitpid(temp->first_process->pid, &status, WUNTRACED); //resumes waiting on it
-				//printf("pid %d complete\n", p->pid);
-				if(!WIFSTOPPED(status)){
-				//THIS IS WRONG CODE BLAH BLAH FIX TO REMOVE JOB FROM LIST
-					if(jobsList == temp){
-						jobsList = temp->next;
-					}
-					temp->first_process->completed = true; //process is completed
-					free_job(temp);
-				}
-				else{
-					temp->first_process->stopped = true; //process is stopped
-				}
-				seize_tty(getpid());
-				return true;
-			}
-			temp = temp->next;
-		}
-		return true;
+        
+        last_job->first_process->completed = true;   //same as quiting from the current process
+        last_job->first_process->status = 0;
+        return true;
     }
     return false;       /* not a builtin command */
 }
 
-/* Build prompt message */
+/* Build prompt messaage */
 char* promptmsg()
 {
     /* Modify this to include pid */
@@ -266,7 +217,7 @@ char* promptmsg()
    // sprintf(message, "dsh-%d$ ",(int) getpid());
 	char string[]="dsh ";
 	int number=getpid();
-	char end[] = "$";
+	char end[] = "$ ";
 	char cated_string[sizeof(string) + sizeof(number) + sizeof(end)];
 	sprintf(cated_string,"%s%d%s",string,number,end);
     return cated_string;
@@ -277,7 +228,9 @@ int main()
     
     init_dsh();
     DEBUG("Successfully initialized\n");
-    
+	terminal_pid = getpid();
+	printf("terminal pid %d", terminal_pid);
+	
     while(1) {
         job_t *j = NULL;
         if(!(j = readcmdline(promptmsg()))) {
@@ -306,7 +259,7 @@ int main()
                 else{
                     find_last_job(jobsList)->next = j;
                 }
-                spawn_job(j, j->bg); //bg is actually reverse of fg so reversed in all other functions
+                spawn_job(j, j->bg);
             }
             
             j = j->next;
