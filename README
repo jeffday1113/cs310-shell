@@ -73,6 +73,10 @@ eg:
 
 (3) logging
 
+We put print statements to check for errors especially utilizing the perror() method which allow us to 
+debug child process since printf() doesnt have access to the terminal in these processes.
+
+
 /************************
  * Feedback on the lab
  ************************/
@@ -91,3 +95,7 @@ eg:
  * List of collaborators involved including any online references/citations.
  * */
 
+http://linux.die.net/man/
+http://www.cs.duke.edu/~chase/cps310/internal/controlflow.pdf
+http://pages.cs.wisc.edu/~remzi/OSTEP/cpu-api.pdf
+http://www.cs.duke.edu/~chase/cps310/projects/lab2/lab2-faq.txt
