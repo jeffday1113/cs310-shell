@@ -57,19 +57,40 @@ void spawn_job(job_t *j, bool fg)
     process_t *p;
 	process_t* last_process;
 	int pfd[2];
+	pipe(pfd);
+	int pfd2[2];
+	pipe(pfd2);
+	int counter = 0;
     for(p = j->first_process; p; p = p->next) {
+		counter++;
+		printf("counter: %d", counter);
         /* YOUR CODE HERE? */
         /* Builtin commands are already taken care earlier */
-        
-		//define file descrtriptors for pipe
+		int run1 = 0;
+		int run2 = 0;
 		
-        
-        //int fpfd;
-        //int ppfd;
-        if(p->next !=NULL){
-			printf("running pipe\n");
-            int a = pipe(pfd);
-			printf("piping ran? : %d", a);
+		int checkforlast = 0;
+		
+        if(p->next !=NULL && counter%2){
+			printf("running pipe odd\n");
+            pipe(pfd);
+			run1 = 1;
+		}
+		if(counter % 2){
+			run1 = 1;
+		}
+		
+		if(p->next != NULL && !(counter%2)){
+			printf("running pipe even\n");
+            pipe(pfd2);
+			run2 = 1;
+		}
+		if(!(counter%2)){
+			run2 = 1;
+		}
+		
+		if(p->next == NULL){
+			checkforlast = 1;
 		}
 		
         switch (pid = fork()) {
@@ -103,8 +124,7 @@ void spawn_job(job_t *j, bool fg)
 				
 				
 				//pipe
-				
-				if (p == j->first_process) {
+				if (p == j->first_process && !checkforlast) {
 					perror("loop 1");
 					close(pfd[0]);
 					close(1);
@@ -112,11 +132,32 @@ void spawn_job(job_t *j, bool fg)
                 }
 				
 				else{
-					perror("loop 2");
-					close(pfd[1]);
-					close(0);
-                    dup2(pfd[0],0); //read
+					if(run2){
+						perror("loop 2 run even");
+						close(pfd[1]);
+						close(0);
+						dup2(pfd[0],0); //read
+						
+						if(!checkforlast){
+							close(pfd2[0]);
+							close(1);
+							dup2(pfd2[1],1); //write
+						}
+					}
+					if(run1){
+						perror("loop 2 run odd");
+						close(pfd2[1]);
+						close(0);
+						dup2(pfd2[0],0); //read
+						
+						if(!checkforlast){
+							close(pfd[0]);
+							close(1);
+							dup2(pfd[1],1); //write
+						}
+					}
                 }
+				
 				
                 //execute desired code
                 execvp(p->argv[0], p->argv);
@@ -140,6 +181,8 @@ void spawn_job(job_t *j, bool fg)
     }
 	close(pfd[0]);
 	close(pfd[1]);
+	close(pfd2[0]);
+	close(pfd2[1]);
     if(fg){
         //seize_tty(getpid()); // assign the terminal back to dsh
 		//would never have been assigned
