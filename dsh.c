@@ -58,13 +58,18 @@ void spawn_job(job_t *j, bool fg)
 	process_t* last_process;
 	//initializes pipes so that close calls don't give errors on a single process in job
 	int pfd[2];
-	pipe(pfd);
+	int er = pipe(pfd);
+	if(er == -1){
+		perror("Error: unable to initialize pipe 1");
+	}
 	int pfd2[2];
-	pipe(pfd2);
+	er = pipe(pfd2);
+	if(er == -1){
+		perror("Error: unable to initialize pipe 1");
+	}
 	int counter = 0;
     for(p = j->first_process; p; p = p->next) {
 		counter++;
-		printf("counter: %d", counter);
         /* YOUR CODE HERE? */
         /* Builtin commands are already taken care earlier */
 		int run1 = 0;
@@ -74,8 +79,10 @@ void spawn_job(job_t *j, bool fg)
 		
 		//check if divisible by 1 and refresh pipe1
         if(p->next !=NULL && counter%2){
-			printf("running pipe odd\n");
-            pipe(pfd);
+            er = pipe(pfd);
+			if(er == -1){
+				perror("Error: unable to initialize pipe 1 inside loop");
+			}
 			run1 = 1;
 		}
 		if(counter % 2){
@@ -84,8 +91,10 @@ void spawn_job(job_t *j, bool fg)
 		
 		//check if divisible by 2 and refresh pipe2
 		if(p->next != NULL && !(counter%2)){
-			printf("running pipe even\n");
-            pipe(pfd2);
+            er = pipe(pfd2);
+			if(er == -1){
+				perror("Error: unable to initialize pipe 1 inside loop");
+			}
 			run2 = 1;
 		}
 		if(!(counter%2)){
@@ -112,7 +121,10 @@ void spawn_job(job_t *j, bool fg)
                     int in;
                     in = open(p->ifile, O_RDONLY);
                     if (in>0){
-                        dup2(in,STDIN_FILENO);
+                        er = dup2(in,STDIN_FILENO);
+						if(er == -1){
+							perror("Error: unable to redirect standardin");
+						}
                         close(in);
                     }
                     else{
@@ -124,42 +136,57 @@ void spawn_job(job_t *j, bool fg)
                 if (p->ofile!=NULL){
                     int o;
                     o=creat(p->ofile, 0644);
-                    dup2(o, STDOUT_FILENO);
+                    er = dup2(o, STDOUT_FILENO);
+					if(er == -1){
+						perror("Error: unable to redirect standardout");
+					}
                     close(o);
                 }
 				
 				
 				//pipe first time
 				if (p == j->first_process && !checkforlast) {
-					perror("loop 1");
 					close(pfd[0]);
 					close(1);
-                    dup2(pfd[1],1); //write
+                    er = dup2(pfd[1],1); //write
+					if(er == -1){
+						perror("Error: unable to attach to first pipe");
+					}
                 }
 				//manipulates two pipelines to prevent overwrites
 				else{
 					if(run2){
-						perror("loop 2 run even");
 						close(pfd[1]);
 						close(0);
-						dup2(pfd[0],0); //read
+						er = dup2(pfd[0],0); //read
+						if(er == -1){
+							perror("Error: unable to attach to pipe");
+						}
 						
 						if(!checkforlast){
 							close(pfd2[0]);
 							close(1);
-							dup2(pfd2[1],1); //write
+							er = dup2(pfd2[1],1); //write
+							if(er == -1){
+								perror("Error: unable to attach to pipe");
+							}
 						}
 					}
 					if(run1){
-						perror("loop 2 run odd");
 						close(pfd2[1]);
 						close(0);
-						dup2(pfd2[0],0); //read
+						er = dup2(pfd2[0],0); //read
+						if(er == -1){
+							perror("Error: unable to attach to pipe");
+						}
 						
 						if(!checkforlast){
 							close(pfd[0]);
 							close(1);
 							dup2(pfd[1],1); //write
+							if(er == -1){
+								perror("Error: unable to attach to pipe");
+							}
 						}
 					}
                 }
@@ -181,21 +208,36 @@ void spawn_job(job_t *j, bool fg)
 				
         }
 		
-        printf("pid of new child: %d\n", pid);
         /* YOUR CODE HERE?  Parent-side code for new job.*/
         
     }
-	close(pfd[0]); //close pipes
-	close(pfd[1]);
-	close(pfd2[0]);
-	close(pfd2[1]);
+	er = close(pfd[0]); //close pipes
+	if(er == -1){
+		perror("Error: unable to attach to close first pipe");
+	}
+	er = close(pfd[1]);
+	if(er == -1){
+		perror("Error: unable to attach to close first pipe");
+	}
+	er = close(pfd2[0]);
+	if(er == -1){
+		perror("Error: unable to attach to close second pipe");
+	}
+	er = close(pfd2[1]);
+	if(er == -1){
+		perror("Error: unable to attach to close second pipe");
+	}
+	
     if(fg){ //do nothing if in background
     }
     else{
         int status = 0;
 		process_t* tempt = j->first_process;
 		while(tempt != NULL){ //wait for all children processes
-			waitpid(tempt->pid, &status, WUNTRACED);
+			int er = waitpid(tempt->pid, &status, WUNTRACED);
+			if(er == -1){
+				perror("Error waiting for process");
+			}
 			tempt = tempt->next;
 		}
 		
@@ -220,7 +262,6 @@ void spawn_job(job_t *j, bool fg)
 				pp->stopped = true; //process is stopped
 				pp = pp->next;
 			}
-			printf("job with pgid %d is stopped\n", j->pgid);
 			j->notified = true;
 		}
 		
@@ -304,11 +345,13 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 				continue_job(temp); //resumes job
 				seize_tty(temp->pgid); //gives it the terminal
 				int status = 0;
-				printf("fg on, taking up terminal until done\n");
 				
 				process_t* tempt = temp->first_process;
 				while(tempt != NULL){ //waiting for process
-					waitpid(tempt->pid, &status, WUNTRACED);
+					int er = waitpid(tempt->pid, &status, WUNTRACED);
+					if(er == -1){
+						perror("Error waiting for process");
+					}
 					tempt = tempt->next;
 				}
 		
