@@ -107,7 +107,7 @@ void spawn_job(job_t *j, bool fg)
 		}
 		
         switch (pid = fork()) {
-                
+               
             case -1: /* fork failure */
                 perror("fork");
                 exit(EXIT_FAILURE);
@@ -193,6 +193,7 @@ void spawn_job(job_t *j, bool fg)
 				
 				
                 //execute desired code
+				
                 execvp(p->argv[0], p->argv);
                 
                 /* YOUR CODE HERE?  Child-side code for new process. */
@@ -202,6 +203,7 @@ void spawn_job(job_t *j, bool fg)
                 
             default: /* parent */
                 /* establish child process group */
+				printf("Launched: %d\n", pid); 
                 p->pid = pid;
                 set_child_pgid(j, p);
                 /* YOUR CODE HERE?  Parent-side code for new process.  */
@@ -254,6 +256,7 @@ void spawn_job(job_t *j, bool fg)
 					temp = temp->next;
 				}
 			}
+			printf("Job with pgid %d complete\n", j->pgid);
 			free_job(j);
 		}
 		else{ //if process is stopped, alert all the children processes
@@ -263,6 +266,7 @@ void spawn_job(job_t *j, bool fg)
 				pp = pp->next;
 			}
 			j->notified = true;
+			printf("Job with pgid %d stopped\n", j->pgid);
 		}
 		
     }
@@ -276,6 +280,7 @@ void continue_job(job_t *j)
         perror("kill(SIGCONT)");
 		
 	j->notified = false;
+	printf("Job with pgid %d continued\n", j->pgid);
 	process_t* p = j->first_process; //alert processes that they are no longer stopped
 	while(p != NULL){
 		p->stopped = false;
@@ -311,7 +316,6 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
             printf("no jobs\n");
         }else{
             print_job(jobsList); //print all jobs
-            
         }
 		
         return true;
@@ -329,6 +333,7 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 		job_t* temp = jobsList;
 		while(temp != NULL){ //loop through jobs to find stopped job
 			if(job_is_stopped(temp)){
+				printf("Job with pgid %d running in background\n", temp->pgid);
 				continue_job(temp); //only need to continue it, no need to monitor
 				return true; //only continue one job
 			}
