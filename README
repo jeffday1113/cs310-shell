@@ -48,7 +48,7 @@
  * In case of lab is limited in some functionality, you should provide the
  * details to maximize your partial credit.  
  * */
-
+(2) job control
 For implementation of commands from the command line of our shell we first checked whether 
 the job was already built in in the builtin_cmd() method. If the job isn’t built in then the 
 main sends it to the spawn_job() with a boolean that marks whether it runs in the background 
@@ -63,6 +63,16 @@ When we spawn the jobs, we first create a pipe before we fork into our child pro
 be able to run multiple processes. For the child process, we first take care of redirection i.e. 
 redirecting the input and output files then pipe the process before actually perfoming an execvp. 
 The pipe is then closed after the parent process had returned since we wont need to use it any more.
+(1) multiple pipelines
+For multiple pipelines we create two pipes which alternate processes i.e. pipe1 does the first process 
+and pipe2 does the next process. By the time we have gotten to the third process, the first pipe would 
+have been closed hence can be used for this processing.
+We use dup2() to duplicate the file descriptor of our pipe so that we can be able to close it afterwards,
+eg:
+	dup2(pfd[0], fileno(stdin));
+
+(3) logging
+
 /************************
  * Feedback on the lab
  ************************/
