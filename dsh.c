@@ -12,7 +12,7 @@ int jobsSize;
 int set_child_pgid(job_t *j, process_t *p)
 {
     if (j->pgid < 0) /* first child: use its pid for job pgid */
-    j->pgid = p->pid;
+        j->pgid = p->pid;
     return(setpgid(p->pid,j->pgid));
 }
 
@@ -22,19 +22,19 @@ void new_child(job_t *j, process_t *p, bool fg)
     /* establish a new process group, and put the child in
      * foreground if requested
      */
-
+    
     /* Put the process into the process group and give the process
      * group the terminal, if appropriate.  This has to be done both by
      * the dsh and in the individual child processes because of
      * potential race conditions.
      * */
-
-     p->pid = getpid();
-
+    
+    p->pid = getpid();
+    
     /* also establish child process group in child to avoid race (if parent has not done it yet). */
-     set_child_pgid(j, p);
-
-    if(fg) // if fg is set
+    set_child_pgid(j, p);
+    
+    if(!fg) // if fg is set NOTE CHANGED TO NOT HERE DUE TO ORIGINAL CALL
         seize_tty(j->pgid); // assign the terminal
     
     /* Set the handling for job control signals back to the default. */
@@ -51,98 +51,226 @@ void new_child(job_t *j, process_t *p, bool fg)
  * subsequent processes in a pipeline.
  * */
 
- void spawn_job(job_t *j, bool fg)
- {
+void spawn_job(job_t *j, bool fg)
+{
     pid_t pid;
     process_t *p;
+	process_t* last_process;
+	//initializes pipes so that close calls don't give errors on a single process in job
+	int pfd[2];
+	int er = pipe(pfd);
+	if(er == -1){
+		perror("Error: unable to initialize pipe 1");
+	}
+	int pfd2[2];
+	er = pipe(pfd2);
+	if(er == -1){
+		perror("Error: unable to initialize pipe 1");
+	}
+	int counter = 0;
     for(p = j->first_process; p; p = p->next) {
+		counter++;
         /* YOUR CODE HERE? */
         /* Builtin commands are already taken care earlier */
+		int run1 = 0;
+		int run2 = 0;
+		
+		int checkforlast = 0;
+		
+		//check if divisible by 1 and refresh pipe1
+        if(p->next !=NULL && counter%2){
+            er = pipe(pfd);
+			if(er == -1){
+				perror("Error: unable to initialize pipe 1 inside loop");
+			}
+			run1 = 1;
+		}
+		if(counter % 2){
+			run1 = 1;
+		}
+		
+		//check if divisible by 2 and refresh pipe2
+		if(p->next != NULL && !(counter%2)){
+            er = pipe(pfd2);
+			if(er == -1){
+				perror("Error: unable to initialize pipe 1 inside loop");
+			}
+			run2 = 1;
+		}
+		if(!(counter%2)){
+			run2 = 1;
+		}
+		
+		//last process in job
+		if(p->next == NULL){
+			checkforlast = 1;
+		}
+		
         switch (pid = fork()) {
+               
             case -1: /* fork failure */
                 perror("fork");
                 exit(EXIT_FAILURE);
-
+                
             case 0: /* child process  */
                 p->pid = getpid();
-
-                new_child(j, p, true);
-                //execute desired code
-
-                //INUT REDIRECTION
-                if (p->ifile!=NULL){
+                new_child(j, p, fg);
+				
+				//checks for input file
+				 if (p->ifile!=NULL){
                     int in;
                     in = open(p->ifile, O_RDONLY);
                     if (in>0){
-                        dup2(in,STDIN_FILENO);
+                        er = dup2(in,STDIN_FILENO);
+						if(er == -1){
+							perror("Error: unable to redirect standardin");
+						}
                         close(in);
                     }
                     else{
                         perror("Input file does not exist");
                     }
                 }
-
+				
+				//checks for output file
                 if (p->ofile!=NULL){
                     int o;
                     o=creat(p->ofile, 0644);
-                    dup2(o, STDOUT_FILENO);
+                    er = dup2(o, STDOUT_FILENO);
+					if(er == -1){
+						perror("Error: unable to redirect standardout");
+					}
                     close(o);
                 }
-
+				
+				
+				//pipe first time
+				if (p == j->first_process && !checkforlast) {
+					close(pfd[0]);
+					close(1);
+                    er = dup2(pfd[1],1); //write
+					if(er == -1){
+						perror("Error: unable to attach to first pipe");
+					}
+                }
+				//manipulates two pipelines to prevent overwrites
+				else{
+					if(run2){
+						close(pfd[1]);
+						close(0);
+						er = dup2(pfd[0],0); //read
+						if(er == -1){
+							perror("Error: unable to attach to pipe");
+						}
+						
+						if(!checkforlast){
+							close(pfd2[0]);
+							close(1);
+							er = dup2(pfd2[1],1); //write
+							if(er == -1){
+								perror("Error: unable to attach to pipe");
+							}
+						}
+					}
+					if(run1){
+						close(pfd2[1]);
+						close(0);
+						er = dup2(pfd2[0],0); //read
+						if(er == -1){
+							perror("Error: unable to attach to pipe");
+						}
+						
+						if(!checkforlast){
+							close(pfd[0]);
+							close(1);
+							dup2(pfd[1],1); //write
+							if(er == -1){
+								perror("Error: unable to attach to pipe");
+							}
+						}
+					}
+                }
+				
+				
+                //execute desired code
+				
                 execvp(p->argv[0], p->argv);
-
-
-                //execvp(p->argv[0], p->argv);
-
+                
                 /* YOUR CODE HERE?  Child-side code for new process. */
                 perror("New child should have done an exec");
                 exit(EXIT_FAILURE);  /* NOT REACHED */
                 break;    /* NOT REACHED */
-
+                
             default: /* parent */
                 /* establish child process group */
+				printf("Launched: %d\n", pid); 
                 p->pid = pid;
                 set_child_pgid(j, p);
-                printf("fg on, taking up terminal until done\n");
-                int status = 0;
-                waitpid(j->first_process->pid, &status, 0);
-                printf("pid %d complete\n", p->pid);
-
                 /* YOUR CODE HERE?  Parent-side code for new process.  */
-
+				
         }
-        //printf("pid of new child: %d\n", pid);
-         if(fg){
-            seize_tty(getpid()); // assign the terminal back to dsh
-            printf("fg off, running in background\n");
-        }
-        else{
-            //printf("fg on, taking up terminal until done\n");
-            //int status = 0;
-            //waitpid(j->first_process->pid, &status, 0);
-            //printf("pid %d complete\n", p->pid);
-            if(jobsList == j){
-                jobsList = j->next;
-            }
-            free_job(j);
-            seize_tty(getpid());
-        }
+		
+        /* YOUR CODE HERE?  Parent-side code for new job.*/
+        
     }
-    // if(fg){
-    //     seize_tty(getpid()); // assign the terminal back to dsh
-    //     printf("fg off, running in background\n");
-    // }
-    // else{
-    //     printf("fg on, taking up terminal until done\n");
-    //     int status = 0;
-    //     waitpid(j->first_process->pid, &status, 0);
-    //     printf("pid %d complete\n", p->pid);
-    //     if(jobsList == j){
-    //         jobsList = j->next;
-    //     }
-    //     free_job(j);
-    //     seize_tty(getpid());
-    // }
+	er = close(pfd[0]); //close pipes
+	if(er == -1){
+		perror("Error: unable to attach to close first pipe");
+	}
+	er = close(pfd[1]);
+	if(er == -1){
+		perror("Error: unable to attach to close first pipe");
+	}
+	er = close(pfd2[0]);
+	if(er == -1){
+		perror("Error: unable to attach to close second pipe");
+	}
+	er = close(pfd2[1]);
+	if(er == -1){
+		perror("Error: unable to attach to close second pipe");
+	}
+	
+    if(fg){ //do nothing if in background
+    }
+    else{
+        int status = 0;
+		process_t* tempt = j->first_process;
+		while(tempt != NULL){ //wait for all children processes
+			int er = waitpid(tempt->pid, &status, WUNTRACED);
+			if(er == -1){
+				perror("Error waiting for process");
+			}
+			tempt = tempt->next;
+		}
+		
+		if(!WIFSTOPPED(status)){ //if process is finished, update jobList
+			if(jobsList->next == NULL){
+				jobsList = NULL;
+			}
+			else{
+				job_t* temp = jobsList;
+				while(temp != NULL){
+					if(temp->next == j){
+						temp->next = j->next;
+					}
+					temp = temp->next;
+				}
+			}
+			printf("Job with pgid %d complete\n", j->pgid);
+			free_job(j);
+		}
+		else{ //if process is stopped, alert all the children processes
+			process_t* pp = j->first_process;
+			while(pp != NULL){
+				pp->stopped = true; //process is stopped
+				pp = pp->next;
+			}
+			j->notified = true;
+			printf("Job with pgid %d stopped\n", j->pgid);
+		}
+		
+    }
+	seize_tty(getpid()); 
 }
 
 /* Sends SIGCONT signal to wake up the blocked job */
@@ -150,6 +278,14 @@ void continue_job(job_t *j)
 {
     if(kill(-j->pgid, SIGCONT) < 0)
         perror("kill(SIGCONT)");
+		
+	j->notified = false;
+	printf("Job with pgid %d continued\n", j->pgid);
+	process_t* p = j->first_process; //alert processes that they are no longer stopped
+	while(p != NULL){
+		p->stopped = false;
+		p = p->next;
+	}
 }
 
 
@@ -157,14 +293,14 @@ void continue_job(job_t *j)
  * builtin_cmd - If the user has typed a built-in command then execute
  * it immediately.
  */
- bool builtin_cmd(job_t *last_job, int argc, char **argv)
- {
-
+bool builtin_cmd(job_t *last_job, int argc, char **argv)
+{
+    
     /* check whether the cmd is a built in command
      */
-
+    
     if (!strcmp(argv[0], "quit")) {
-
+        
         /* Your code here */
         exit(EXIT_SUCCESS);
         last_job->first_process->completed = true;   //complete all processes after exiting
@@ -172,22 +308,16 @@ void continue_job(job_t *j)
         return true;
     }
     else if (!strcmp("jobs", argv[0])) {
-        /* Your code here */
-        // This is why we have to keep a list of all jobs
-
         //check if jobs in list
         //update size
-
+        
         if (jobsList ==NULL) {
             //nothing
-            printf("no jobs");
+            printf("no jobs\n");
         }else{
-            print_job(jobsList);
-            
+            print_job(jobsList); //print all jobs
         }
-        
-        last_job->first_process->completed = true;
-        last_job->first_process->status = 0;
+		
         return true;
     }
     else if (!strcmp("cd", argv[0])) {
@@ -196,38 +326,92 @@ void continue_job(job_t *j)
         chdir(argv[1]);   //new directory
         // how to assign it back to shell
         
-        last_job->first_process->completed = true;
-        last_job->first_process->status = 0;
         return true;
     }
     else if (!strcmp("bg", argv[0])) {
         /* Your code here */
-        last_job->first_process->completed = true;   //Not required
-        last_job->first_process->status = 0;
+		job_t* temp = jobsList;
+		while(temp != NULL){ //loop through jobs to find stopped job
+			if(job_is_stopped(temp)){
+				printf("Job with pgid %d running in background\n", temp->pgid);
+				continue_job(temp); //only need to continue it, no need to monitor
+				return true; //only continue one job
+			}
+			temp = temp->next;
+		}
+		
         return true;
     }
-    else if (!strcmp("fg", argv[0])) {
+    else if (!strcmp("fg", argv[0])) { //move to foreground
         /* Your code here */
-
-        last_job->first_process->completed = true;   //same as quiting from the current process
-        last_job->first_process->status = 0;
-        return true;
+		job_t* temp = jobsList;
+		while(temp != NULL){
+			if(job_is_stopped(temp)){ //check for first stopped job
+				continue_job(temp); //resumes job
+				seize_tty(temp->pgid); //gives it the terminal
+				int status = 0;
+				
+				process_t* tempt = temp->first_process;
+				while(tempt != NULL){ //waiting for process
+					int er = waitpid(tempt->pid, &status, WUNTRACED);
+					if(er == -1){
+						perror("Error waiting for process");
+					}
+					tempt = tempt->next;
+				}
+		
+				if(!WIFSTOPPED(status)){ //if the job completes
+					if(jobsList->next == NULL){ //check if it was only job
+						jobsList = NULL;
+					}
+					else{
+						job_t* tempCheck = jobsList; //if not, find its location and redirect pointers
+						while(tempCheck != NULL){
+							if(tempCheck->next == temp){
+								tempCheck->next = temp->next;
+							}
+							tempCheck = tempCheck->next;
+						}
+					}
+					free_job(temp); 
+				}
+				else{ //if job is stopped again
+					process_t* pp = temp->first_process;
+					while(pp != NULL){
+						pp->stopped = true; //process is stopped, alert all children
+						pp = pp->next;
+					}
+					temp->notified = true;
+				}
+				seize_tty(getpid()); //give back terminal to shell
+				return true;
+			}
+			temp = temp->next;
+			
+		}
+		return true;
     }
     return false;       /* not a builtin command */
 }
 
-/* Build prompt messaage */
+/* Build prompt message */
 char* promptmsg()
 {
     /* Modify this to include pid */
-    char* message[16];
-    sprintf(message, "dsh-%d$ ",(int) getpid());
-    return message;
+    //char* message[16];
+   // sprintf(message, "dsh-%d$ ",(int) getpid());
+   //code from stackoverflow, useing sprintf to concatanate int and string
+	char string[]="dsh ";
+	int number=getpid();
+	char end[] = "$";
+	char cated_string[sizeof(string) + sizeof(number) + sizeof(end)];
+	sprintf(cated_string,"%s%d%s",string,number,end);
+    return cated_string;
 }
 
 int main()
 {
-
+    
     init_dsh();
     DEBUG("Successfully initialized\n");
     
@@ -241,29 +425,20 @@ int main()
             }
             continue; /* NOOP; user entered return or spaces with return */
         }
-
-        /* Only for debugging purposes to show parser output; turn off in the
-         * final code */
-        //  if(PRINT_INFO) print_job(j);
-
-        /* Your code goes here */
-        // We also need to figure out a way to give the new jobs ids
-        //help
-        //loop through the jobs? Most definitely
-
+        
         while(j!=NULL){
-            if(!builtin_cmd(j, j->first_process->argc, j->first_process->argv)){
+            if(!builtin_cmd(j, j->first_process->argc, j->first_process->argv)){ //check if builtin, if not create a new job
                 if(jobsList == NULL){
-                    jobsList = j;
+                    jobsList = j; //initialize jobsList if it is null
                 }
                 else{
                     find_last_job(jobsList)->next = j;
                 }
-                spawn_job(j, j->bg);
+                spawn_job(j, j->bg); //bg is actually reverse of fg so reversed in all other functions
             }
-
-        j = j->next;
+            
+            j = j->next; //read next line
         }
-
+        
     }
 }

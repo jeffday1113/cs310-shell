@@ -110,6 +110,7 @@ int endswith(const char* haystack, const char* needle)
 
 void seize_tty(pid_t callingprocess_pgid)
 {
+	printf("control of terminal given to %d", callingprocess_pgid);
 	/* Grab control of the terminal.  */
 	/* Don't call this until other initialization is complete */
   if (dsh_is_interactive) {
