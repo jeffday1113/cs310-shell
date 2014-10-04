@@ -10,17 +10,17 @@
 	Please follow the format or our scripts will break. 
 */
 
-	Name1: 
-	NetId1: 
-	Time spent: 10 hours
+	Name1: Andrew Gauthier
+	NetId1: ajg45 
+	Time spent: 16 hours
 
-	Name2: 
-	NetId2:
-	Time spent: 10 hours
+	Name2: Jeff Day
+	NetId2: rd22 
+	Time spent: 16 hours
 
-	Name3: 
-	NetId3:
-	Time spent: 10 hours
+	Name3: Clive Mudanda
+	NetId3: cmm85
+	Time spent: 16 hours
 
 /******************
  * Files to submit
@@ -41,13 +41,62 @@
  * implementation details. In particular, you can use pseudocode to describe your
  * implementation details where necessary. However that does not mean to
  * copy/paste your C code. Specifically, you should summarize details corresponding 
- * to (1) multiple pipelines (2) job control (3) logging (3) .c commands 
+ * to (1) multiple pipelines (2) job control (3) logging (4) .c commands 
  * compilation and execution. We expect the design and implementation details to 
  * be at most 1-2 pages.  A plain textfile is requested. 
 
  * In case of lab is limited in some functionality, you should provide the
  * details to maximize your partial credit.  
  * */
+
+For implementation of commands from the command line of our shell we first checked whether 
+the job was already built in in the builtin_cmd() method. If the job isn’t built in then the 
+main sends it to the spawn_job() with a boolean that marks whether it runs in the background 
+or in the foreground.
+
+For specific built in commands,  the method returns true if the passed in command is found 
+and false otherwise. Also, when a command if found in the built in method, we mark is as completed 
+assuming it has already been executed.The way we looks for the jobs is just by looping through the 
+job_t structure and add it to our running processes. A builtin command does not spawn a new 
+process, which makes it much easier to handle.
+
+(1)
+When we spawn the jobs, we first create a pipe before we fork into our child processes inorder to 
+be able to run multiple processes. For the child process, we first take care of redirection i.e. 
+redirecting the input and output files then pipe the process before actually perfoming an execvp. 
+The pipe has an interesting implementation to make sure that it works for more than 2 processes. 
+Two pipes are initialized at the beginning, and these pipes are then switched off as the pipes
+used to connect processes. For example, one pipe can connect process 1 to process 2, but a 
+different pipe is needed to connect 2 to 3, as the first pipe will still exist while attaching 
+it to 2. For the connection from 3 to 4 the first pipe can be reused. The pipes are not closed
+until after the entire for loop runs, and the closing at this point allows for data transfer.
+
+(2) job control
+For foreground jobs we always waited for all the processes of the active job using the WIFSTOPPED
+flag - this flag ensured that our code would resume for both a completed job and a stopped job. 
+Once we detected that the job was stopped or complete, we checked for which one, and performed
+actions on the job as necessary depending on the reason for waitpid's completion. Any active 
+process will be removed from the job list if it completes - our trouble was with dealing with 
+background processes. As these processes weren't being monitored at the time of their expiration,
+it was much harder to detect completion and remove them. The solution to this would involve using
+WNOHANG with waitpid, however we weren't able to implement this facet of the shell.
+
+(3) logging
+
+We put print statements to check for errors especially utilizing the perror() method which allow us to 
+debug child process since printf() doesnt have access to the terminal in these processes. The errors 
+check for a variety of problems which could occur and help the user by offering them useful information
+to try and figure out where something went wrong.
+
+(4) commands
+
+We did not implement any compilers, so our shell is not capable of compiling c code, but we can run it 
+because of the execvp function we used on forked processes. After forking, we run through pipeline checks
+for each process, as well as IO checks, and after these parts have been set up we call exec to allow 
+the process to do what the user asked of it. By using execvp, we ensure that our shell will look through
+files to try and find the command specified by the user, rather than requiring the user to submit the
+exact path of the command. 
+
 
 /************************
  * Feedback on the lab
@@ -58,6 +107,7 @@
  * improve the lab.
  * */
 
+
 /************************
  * References
  ************************/
@@ -65,3 +115,8 @@
 /*
  * List of collaborators involved including any online references/citations.
  * */
+http://www.stackoverflow.com
+http://linux.die.net/man/
+http://www.cs.duke.edu/~chase/cps310/internal/controlflow.pdf
+http://pages.cs.wisc.edu/~remzi/OSTEP/cpu-api.pdf
+http://www.cs.duke.edu/~chase/cps310/projects/lab2/lab2-faq.txt
